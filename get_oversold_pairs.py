@@ -5,32 +5,35 @@ import pandas_ta as ta
 
 
 def get_asset_pairs():
-    # List of stablecoins and fiat codes to exclude as base currencies
+    # Tickers to exclude as base asset
     exclude_bases = {
         "USD", "USDT", "USDC", "EUR", "GBP",
-        "DAI", "CHF", "CAD", "JPY", "TRY"
+        "DAI", "CHF", "CAD", "JPY", "TRY",
+        "TUSD", "USDD", "UUSD", "GUSD"
     }
     resp = requests.get("https://api.kraken.com/0/public/AssetPairs")
     data = resp.json()
     pairs = []
     for k, v in data["result"].items():
-        # Get info with robust fallbacks
         altname = v.get("altname", "")
         wsname = v.get("wsname", "")
         base = v.get("base", "")
         quote = v.get("quote", "")
-    # Only pairs with a USD quote (i.e. something/USD) or altname ends with USD
-    if quote.replace("Z", "").replace("X", "") == "USD" or altname.endswith("USD"):
-            # Exclude if the base asset is also a stablecoin or currency
-            for ex_base in exclude_bases:
-                # Check the readable pair name so we rule out "USDT/USD",
-                # "EUR/USD", etc.
-                if (
-                    wsname.startswith(ex_base + "/")
-                    or base.replace("X", "").replace("Z", "") in exclude_bases
-                ):
-                    break
-            else:
+
+        # Only pairs with USD quote
+        if (
+            quote.replace("Z", "").replace("X", "") == "USD"
+            or altname.endswith("USD")
+        ):
+            # Extract actual base ticker (strip X/Z for Kraken format)
+            base_ticker = base.replace("X", "").replace("Z", "")
+
+            # Double check base asset is not excluded (stablecoin/fiat)
+            # Also check wsname (e.g. "USDT/USD", "EUR/USD")
+            if (
+                base_ticker not in exclude_bases
+                and not any(wsname.startswith(b + "/") for b in exclude_bases)
+            ):
                 pairs.append(k)
     return pairs
 
