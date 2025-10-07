@@ -38,6 +38,20 @@ def get_asset_pairs():
     return pairs
 
 
+def is_rebound_candidate(pair):
+    ticker = requests.get(
+        f"https://api.kraken.com/0/public/Ticker?pair={pair}"
+    ).json()['result']
+    info = next(iter(ticker.values()))
+    volume_24h = float(info['v'][1])
+    last_price = float(info['c'][0])
+    # Only consider pairs with last_price between $1 and $500
+    if not (1 < last_price < 500):
+        return False
+    # Only pairs with volume > 100000
+    return volume_24h > 100000
+
+
 def get_ohlc(pair, interval=15):
     resp = requests.get(
         f"https://api.kraken.com/0/public/OHLC?pair={pair}&interval={interval}"
@@ -66,9 +80,15 @@ def analyze(pair, interval):
     latest_stoch_k = (
         stoch["STOCHk_14_3_3"].iloc[-2] if len(stoch) >= 2 else None
     )
+    # Rolling support check
+    recent_low = df['close'].rolling(window=90).min().iloc[-2]
+    last_price = df['close'].iloc[-2]
+    near_support = last_price <= recent_low * 1.07
+    # Oversold and candidate for rebound
     if latest_rsi is not None and latest_stoch_k is not None:
         if latest_rsi < 30 and latest_stoch_k < 20:
-            return pair, latest_rsi, latest_stoch_k
+            if is_rebound_candidate(pair) and near_support:
+                return pair, latest_rsi, latest_stoch_k
     return None
 
 
