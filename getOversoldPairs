@@ -1,0 +1,70 @@
+import requests
+import pandas as pd
+import concurrent.futures
+import pandas_ta as ta
+
+
+def get_asset_pairs():
+    resp = requests.get("https://api.kraken.com/0/public/AssetPairs")
+    data = resp.json()
+    pairs = [
+        k
+        for k, v in data["result"].items()
+        if v.get("aclass_base") == "currency" and "USD" in v.get("wsname", "")
+    ]
+    return pairs
+
+
+def get_ohlc(pair, interval=15):
+    resp = requests.get(
+        f"https://api.kraken.com/0/public/OHLC?pair={pair}&interval={interval}"
+    )
+    data = resp.json()["result"]
+    ohlc = next(iter([v for v in data.values() if isinstance(v, list)]))
+    df = pd.DataFrame(
+        ohlc,
+        columns=[
+            "time", "open", "high", "low", "close", "vwap", "volume", "count"
+        ],
+    )
+    df["close"] = df["close"].astype(float)
+    df["high"] = df["high"].astype(float)
+    df["low"] = df["low"].astype(float)
+    return df
+
+
+def analyze(pair, interval):
+    df = get_ohlc(pair, interval=interval)
+    if len(df) < 14:
+        return None
+    rsi = ta.rsi(df["close"], length=14)
+    stoch = ta.stoch(df["high"], df["low"], df["close"], k=14, d=3)
+    latest_rsi = rsi.iloc[-2] if len(rsi) >= 2 else None
+    latest_stoch_k = (
+        stoch["STOCHk_14_3_3"].iloc[-2] if len(stoch) >= 2 else None
+    )
+    if latest_rsi is not None and latest_stoch_k is not None:
+        if latest_rsi < 30 and latest_stoch_k < 20:
+            return pair, latest_rsi, latest_stoch_k
+    return None
+
+
+def main():
+    pairs = get_asset_pairs()
+    oversold_coins = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_pair = {
+            executor.submit(analyze, pair, 15): pair
+            for pair in pairs
+        }
+        for future in concurrent.futures.as_completed(future_to_pair):
+            result = future.result()
+            if result:
+                oversold_coins.append(result)
+    print('Oversold coins:')
+    for coin, rsi, stoch in oversold_coins:
+        print(f'{coin}: RSI={rsi:.2f}, StochK={stoch:.2f}')
+
+
+if __name__ == "__main__":
+    main()
