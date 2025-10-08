@@ -1,7 +1,8 @@
-import requests
-import pandas as pd
 import concurrent.futures
+
+import pandas as pd
 import pandas_ta as ta
+import requests
 
 
 def get_asset_pairs():

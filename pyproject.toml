@@ -1,0 +1,54 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+  ".venv",
+  "diagnostics_out",
+  "logs",
+]
+
+[tool.ruff.lint]
+select = [
+  "E",  # pycodestyle
+  "F",  # pyflakes
+  "I",  # isort
+  "UP", # pyupgrade
+]
+ignore = [
+  "E203",  # whitespace before ':' (Black compatibility)
+]
+
+[tool.ruff.format]
+quote-style = "preserve"
+indent-style = "space"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+follow_imports = "silent"
+explicit_package_bases = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unreachable = true
+show_error_codes = true
+pretty = true
+exclude = [
+  "^\\.venv/",
+  "^logs/",
+  "^diagnostics_out/",
+]
+
+[tool.flake8]
+max-line-length = 100
+exclude = [
+  ".venv",
+  "logs",
+]
