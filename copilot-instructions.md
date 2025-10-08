@@ -1,3 +1,13 @@
+## Linting Policy (Mandatory)
+
+**No code with lint errors or warnings is permitted.**
+
+- All code must pass linting (Ruff), formatting (Black, isort), and type checking (mypy) with zero errors or warnings before being considered complete.
+- Do not silence or ignore linter/type checker diagnostics except for rare, justified cases (which must be documented in the code and PR).
+- If a linter or formatter reports an issue, it must be fixed at the source, not suppressed.
+- This policy applies to all scripts, modules, and notebooks in this repository.
+
+**Any code submission or merge request that does not meet this standard will be rejected.**
 # Copilot Instructions
 
 > | Metadata       | Value                                               |

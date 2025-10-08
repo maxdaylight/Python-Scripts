@@ -71,43 +71,73 @@ def get_ohlc(pair, interval=15):
     return df
 
 
-def analyze(pair, interval):
+def min_breakeven_move(entry, maker_fee=0.002, taker_fee=0.0035):
+    rt_fee = maker_fee + taker_fee
+    return rt_fee + 0.001  # Add 0.1% buffer for slippage/execution
+
+
+def analyze(pair, interval, maker_fee=0.002, taker_fee=0.0035):
     df = get_ohlc(pair, interval=interval)
-    if len(df) < 14:
+    if len(df) < 20:
         return None
     rsi = ta.rsi(df["close"], length=14)
     stoch = ta.stoch(df["high"], df["low"], df["close"], k=14, d=3)
     latest_rsi = rsi.iloc[-2] if len(rsi) >= 2 else None
     latest_stoch_k = (
-        stoch["STOCHk_14_3_3"].iloc[-2] if len(stoch) >= 2 else None
+        stoch["STOCHk_14_3_3"].iloc[-2]
+        if len(stoch) >= 2 else None
     )
+
+    entry = df["close"].iloc[-2]           # Likely fill price
+    target = df["close"].rolling(20).mean().iloc[-2]  # Mean reversion (MA 20)
+    min_move_pct = min_breakeven_move(entry, maker_fee, taker_fee)
+    actual_move_pct = (target - entry) / entry
+
     # Rolling support check
     recent_low = df['close'].rolling(window=90).min().iloc[-2]
-    last_price = df['close'].iloc[-2]
+    last_price = entry
     near_support = last_price <= recent_low * 1.07
-    # Oversold and candidate for rebound
+
     if latest_rsi is not None and latest_stoch_k is not None:
         if latest_rsi < 30 and latest_stoch_k < 20:
             if is_rebound_candidate(pair) and near_support:
-                return pair, latest_rsi, latest_stoch_k
+                if actual_move_pct > min_move_pct:
+                    return {
+                        "pair": pair,
+                        "entry": entry,
+                        "target": target,
+                        # Example: half the target range for stop
+                        "stop": entry - (target - entry) / 2,
+                        "rsi": latest_rsi,
+                        "stoch_k": latest_stoch_k,
+                        "expected_pct": round(
+                            actual_move_pct * 100, 2
+                        ),
+                    }
     return None
 
 
 def main():
     pairs = get_asset_pairs()
-    oversold_coins = []
+    good_trades = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         future_to_pair = {
-            executor.submit(analyze, pair, 15): pair
-            for pair in pairs
+            executor.submit(analyze, pair, 15): pair for pair in pairs
         }
         for future in concurrent.futures.as_completed(future_to_pair):
             result = future.result()
             if result:
-                oversold_coins.append(result)
-    print('Oversold coins:')
-    for coin, rsi, stoch in oversold_coins:
-        print(f'{coin}: RSI={rsi:.2f}, StochK={stoch:.2f}')
+                good_trades.append(result)
+    print('Profitable Reversion Trades:')
+    for trade in good_trades:
+        print(
+            f"{trade['pair']}: Entry={trade['entry']:.2f}, "
+            f"Target={trade['target']:.2f}, "
+            f"Stop={trade['stop']:.2f}, "
+            f"Expected Move={trade['expected_pct']}%, "
+            f"RSI={trade['rsi']:.2f}, "
+            f"StochK={trade['stoch_k']:.2f}"
+        )
 
 
 if __name__ == "__main__":
