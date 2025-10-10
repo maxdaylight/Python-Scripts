@@ -1,6 +1,9 @@
 import concurrent.futures
+import logging
+import os
 import smtplib
 from email.message import EmailMessage
+from logging.handlers import TimedRotatingFileHandler
 
 import pandas as pd
 import pandas_ta as ta
@@ -12,6 +15,48 @@ EMAIL_FROM = "stockalerts@maximized.site"
 EMAIL_TO = "maxdaylight@maximized.site"
 EMAIL_RELAY_HOST = "192.168.0.240"
 EMAIL_RELAY_PORT = 25
+
+# Logging configuration
+LOG_FILE = "/var/log/kraken_oversold.log"
+LOG_ROTATE_INTERVAL_HOURS = 168  # 7 days
+
+
+def setup_logger():
+    """Configure a logger that writes to a rotating file every 168 hours
+    and also to stdout (captured by journald when run as a service)."""
+    logger = logging.getLogger("kraken_oversold")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.INFO)
+    fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    # Try primary log path; on failure, fall back to CWD
+    try:
+        file_handler = TimedRotatingFileHandler(
+            LOG_FILE,
+            when="h",
+            interval=LOG_ROTATE_INTERVAL_HOURS,
+            backupCount=8,
+            encoding="utf-8",
+        )
+    except (PermissionError, FileNotFoundError, OSError):
+        fallback = os.path.join(os.getcwd(), "kraken_oversold.log")
+        file_handler = TimedRotatingFileHandler(
+            fallback,
+            when="h",
+            interval=LOG_ROTATE_INTERVAL_HOURS,
+            backupCount=8,
+            encoding="utf-8",
+        )
+    file_handler.setFormatter(fmt)
+    logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(fmt)
+    logger.addHandler(stream_handler)
+    return logger
+
+
+logger = setup_logger()
 
 
 def get_asset_pairs():
@@ -170,13 +215,22 @@ def send_email(good_trades):
     lines.append("")
     lines.append("This is an automated alert.")
     msg.set_content("\n".join(lines))
-
-    with smtplib.SMTP(EMAIL_RELAY_HOST, EMAIL_RELAY_PORT) as s:
-        s.send_message(msg)
+    try:
+        with smtplib.SMTP(EMAIL_RELAY_HOST, EMAIL_RELAY_PORT) as s:
+            s.send_message(msg)
+        logger.info(
+            "Email sent to %s with %d oversold candidates.",
+            EMAIL_TO,
+            len(good_trades),
+        )
+    except Exception as e:
+        logger.error("Failed to send email: %s", e)
 
 
 def main():
+    logger.info("Starting Kraken oversold pairs monitor run...")
     pairs = get_asset_pairs()
+    logger.info("Fetched %d USD pairs for analysis.", len(pairs))
     good_trades = []
     near_misses = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -190,6 +244,7 @@ def main():
             elif fail_reasons:
                 near_misses.append((future_to_pair[future], fail_reasons))
     print('Profitable Reversion Trades:')
+    logger.info('Profitable Reversion Trades:')
     if good_trades:
         for trade in good_trades:
             print(
@@ -200,14 +255,25 @@ def main():
                 f"RSI={trade['rsi']:.2f}, "
                 f"StochK={trade['stoch_k']:.2f}"
             )
+            logger.info(
+                (
+                    "%s: Entry=%.2f, Target=%.2f, Stop=%.2f, "
+                    "Expected Move=%s%%, RSI=%.2f, StochK=%.2f"
+                ),
+                trade['pair'], trade['entry'], trade['target'], trade['stop'],
+                trade['expected_pct'], trade['rsi'], trade['stoch_k']
+            )
         if EMAIL_ENABLED:
             send_email(good_trades)
     else:
         print('No Profitable Reversion Trades Found!')
+        logger.info('No Profitable Reversion Trades Found!')
     if near_misses:
         print('\nNear Misses:')
+        logger.info('Near Misses:')
         for pair, reasons in near_misses:
             print(f"{pair}: Failed criteria -> {', '.join(reasons)}")
+            logger.info("%s: Failed criteria -> %s", pair, ', '.join(reasons))
 
 
 if __name__ == "__main__":
