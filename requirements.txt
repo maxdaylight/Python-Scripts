@@ -1,9 +1,7 @@
 # Core runtime dependencies
 requests>=2.32.0
 pandas>=2.2.0
-# pandas-ta: pin explicit versions to allow pre-release installation without --pre
-pandas-ta==0.3.14b0; python_version < "3.12"
-pandas-ta==0.4.71b0; python_version >= "3.12"
+ta>=0.11.0
 
 # Utilities
 colorama>=0.4.6

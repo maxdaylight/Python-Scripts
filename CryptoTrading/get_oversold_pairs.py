@@ -5,8 +5,11 @@ from email.message import EmailMessage
 from logging.handlers import TimedRotatingFileHandler
 
 import pandas as pd
-import pandas_ta as ta
 import requests
+from ta.momentum import (
+    RSIIndicator,
+    StochasticOscillator,
+)
 
 # Email configuration (read from env or set here)
 EMAIL_ENABLED = True
@@ -135,12 +138,23 @@ def analyze(pair, interval, maker_fee=0.002, taker_fee=0.0035):
     df = get_ohlc(pair, interval=interval)
     if len(df) < 20:
         return None, ["insufficient_data"]
-    rsi = ta.rsi(df["close"], length=14)
-    stoch = ta.stoch(df["high"], df["low"], df["close"], k=14, d=3)
-    latest_rsi = rsi.iloc[-2] if len(rsi) >= 2 else None
+    try:
+        rsi_series = RSIIndicator(close=df["close"], window=14).rsi()
+        stoch_k_series = (
+            StochasticOscillator(
+                high=df["high"],
+                low=df["low"],
+                close=df["close"],
+                window=14,
+                smooth_window=3,
+            ).stoch()
+        )
+    except Exception:
+        rsi_series = pd.Series(dtype=float)
+        stoch_k_series = pd.Series(dtype=float)
+    latest_rsi = rsi_series.iloc[-2] if len(rsi_series) >= 2 else None
     latest_stoch_k = (
-        stoch["STOCHk_14_3_3"].iloc[-2]
-        if len(stoch) >= 2 else None
+        stoch_k_series.iloc[-2] if len(stoch_k_series) >= 2 else None
     )
 
     entry = df["close"].iloc[-2]           # Likely fill price
