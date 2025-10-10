@@ -1,8 +1,17 @@
 import concurrent.futures
+import smtplib
+from email.message import EmailMessage
 
 import pandas as pd
 import pandas_ta as ta
 import requests
+
+# Email configuration (read from env or set here)
+EMAIL_ENABLED = True
+EMAIL_FROM = "stockalerts@maximized.site"
+EMAIL_TO = "maxdaylight@maximized.site"
+EMAIL_RELAY_HOST = "192.168.0.240"
+EMAIL_RELAY_PORT = 25
 
 
 def get_asset_pairs():
@@ -139,6 +148,33 @@ def analyze(pair, interval, maker_fee=0.002, taker_fee=0.0035):
     return None, fail_reasons
 
 
+def send_email(good_trades):
+    if not good_trades:
+        return
+    msg = EmailMessage()
+    msg['Subject'] = "Kraken Oversold Pairs Alert"
+    msg['From'] = EMAIL_FROM
+    msg['To'] = EMAIL_TO
+
+    lines = [
+        "Oversold Kraken USD pairs detected (mean reversion candidates):",
+        "",
+    ]
+    for t in good_trades:
+        lines.append(
+            f"{t['pair']}: Entry={t['entry']:.4f}, "
+            f"Target={t['target']:.4f}, Stop={t['stop']:.4f}, "
+            f"Expected Move={t['expected_pct']}%, "
+            f"RSI={t['rsi']:.2f}, StochK={t['stoch_k']:.2f}"
+        )
+    lines.append("")
+    lines.append("This is an automated alert.")
+    msg.set_content("\n".join(lines))
+
+    with smtplib.SMTP(EMAIL_RELAY_HOST, EMAIL_RELAY_PORT) as s:
+        s.send_message(msg)
+
+
 def main():
     pairs = get_asset_pairs()
     good_trades = []
@@ -164,6 +200,8 @@ def main():
                 f"RSI={trade['rsi']:.2f}, "
                 f"StochK={trade['stoch_k']:.2f}"
             )
+        if EMAIL_ENABLED:
+            send_email(good_trades)
     else:
         print('No Profitable Reversion Trades Found!')
     if near_misses:
