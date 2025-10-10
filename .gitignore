@@ -74,6 +74,9 @@ Thumbs.db
 # Logs
 logs/
 *.log
+log/
+kraken_oversold.log
+crypto-oversold.log
 
 # Analysis artifacts (runtime-generated; not tracked)
 analysis/stop_reject_differential.jsonl

@@ -1,6 +1,5 @@
 import concurrent.futures
 import logging
-import os
 import smtplib
 from email.message import EmailMessage
 from logging.handlers import TimedRotatingFileHandler
@@ -17,7 +16,7 @@ EMAIL_RELAY_HOST = "192.168.0.240"
 EMAIL_RELAY_PORT = 25
 
 # Logging configuration
-LOG_FILE = "/var/log/kraken_oversold.log"
+LOG_FILE = "/var/log/crypto-oversold.log"
 LOG_ROTATE_INTERVAL_HOURS = 168  # 7 days
 
 
@@ -39,7 +38,9 @@ def setup_logger():
             encoding="utf-8",
         )
     except (PermissionError, FileNotFoundError, OSError):
-        fallback = os.path.join(os.getcwd(), "kraken_oversold.log")
+        # Fall back to a safe, non-repo location to avoid
+        # modifying the git workspace
+        fallback = "/tmp/crypto-oversold.log"
         file_handler = TimedRotatingFileHandler(
             fallback,
             when="h",
