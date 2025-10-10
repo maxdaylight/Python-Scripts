@@ -1,9 +1,8 @@
 # Core runtime dependencies
 requests>=2.32.0
 pandas>=2.2.0
-# pandas-ta: for Python < 3.12, install 0.3.14b0 from GitHub tag (pre-release),
-# for Python >= 3.12, use the latest pre-release from PyPI.
-pandas-ta @ https://github.com/twopirllc/pandas-ta/archive/refs/tags/0.3.14b0.zip; python_version < "3.12"
+# pandas-ta: pin explicit versions to allow pre-release installation without --pre
+pandas-ta==0.3.14b0; python_version < "3.12"
 pandas-ta==0.4.71b0; python_version >= "3.12"
 
 # Utilities
