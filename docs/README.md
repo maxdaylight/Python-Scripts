@@ -58,12 +58,12 @@ python CryptoTrading/get_oversold_pairs.py
 4) Start services
 
 ```bash
-sudo systemctl stop kraken_oversold.service kraken_newlistings.service
+systemctl stop kraken_oversold.service kraken_newlistings.service
 cd /usr/local/bin/python-scripts
-sudo git pull --rebase --autostash
+git pull --rebase --autostash
 source /usr/local/bin/python-scripts/venv/bin/activate
 pip install -r requirements.txt
-sudo systemctl start kraken_oversold.service kraken_newlistings.service
+systemctl start kraken_oversold.service kraken_newlistings.service
 ```
 
 See deployment details in `docs/deployment-debian.md`.

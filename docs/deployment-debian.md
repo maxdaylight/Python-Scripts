@@ -1,23 +1,25 @@
 # Deploy on Debian / LXC
 
 These steps set up the repository and a shared Python virtual environment for all scripts under `/usr/local/bin/python-scripts`.
-Services run as root inside an unprivileged Proxmox LXC.
+Services run as root inside an unprivileged Proxmox Debian LXC.
+
+There is no need for 'sudo' in the following commands if running on an unprivileged Proxmox Debian LXC.
 
 > Replace `[GITHUB_PAT]` with a valid GitHub Personal Access Token with repo read access.
 
 ## 1) Clone repo
 
 ```bash
-sudo mkdir -p /usr/local/bin
-sudo git clone https://maxdaylight:[GITHUB_PAT]@github.com/maxdaylight/python-scripts.git /usr/local/bin/python-scripts
+mkdir -p /usr/local/bin
+git clone https://maxdaylight:[GITHUB_PAT]@github.com/maxdaylight/python-scripts.git /usr/local/bin/python-scripts
 cd /usr/local/bin/python-scripts
 ```
 
 ## 2) Create venv and install dependencies (Python 3.11)
 
 ```bash
-sudo apt-get update -y
-sudo apt-get install -y python3.11-venv python3-pip || sudo apt-get install -y python3-venv python3-pip
+apt-get update -y
+apt-get install -y python3.11-venv python3-pip || apt-get install -y python3-venv python3-pip
 # Prefer Python 3.11
 python3.11 -m venv /usr/local/bin/python-scripts/venv || python3 -m venv /usr/local/bin/python-scripts/venv
 source /usr/local/bin/python-scripts/venv/bin/activate
@@ -28,18 +30,18 @@ pip install -r requirements.txt
 Optional: restrict permissions
 
 ```bash
-sudo chown -R root:root /usr/local/bin/python-scripts
-sudo find /usr/local/bin/python-scripts -type d -exec chmod 755 {} \;
-sudo find /usr/local/bin/python-scripts -type f -exec chmod 644 {} \;
+chown -R root:root /usr/local/bin/python-scripts
+find /usr/local/bin/python-scripts -type d -exec chmod 755 {} \;
+find /usr/local/bin/python-scripts -type f -exec chmod 644 {} \;
 # Make scripts executable if running directly
-sudo find /usr/local/bin/python-scripts -name "*.py" -exec chmod 755 {} \;
+find /usr/local/bin/python-scripts -name "*.py" -exec chmod 755 {} \;
 ```
 
 ## 3) Systemd services
 
 Create service files for the scripts. These units run as root in an unprivileged LXC. Adjust `WorkingDirectory` if you clone elsewhere.
 
-`/etc/systemd/system/kraken_oversold.service`:
+`nano /etc/systemd/system/kraken_oversold.service`:
 
 ```ini
 [Unit]
@@ -56,15 +58,12 @@ Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-# Optional email overrides
-# Environment=EMAIL_ENABLED=true
-# Environment=EMAIL_TO=alerts@example.com
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-`/etc/systemd/system/kraken_newlistings.service`:
+`nano /etc/systemd/system/kraken_newlistings.service`:
 
 ```ini
 [Unit]
@@ -89,9 +88,9 @@ WantedBy=multi-user.target
 Enable and start:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now kraken_oversold.service kraken_newlistings.service
-sudo systemctl status kraken_oversold.service kraken_newlistings.service
+systemctl daemon-reload
+systemctl enable --now kraken_oversold.service kraken_newlistings.service
+systemctl status kraken_oversold.service kraken_newlistings.service
 ```
 
 ## 4) Logs
@@ -103,27 +102,27 @@ sudo systemctl status kraken_oversold.service kraken_newlistings.service
 Make persistent across reboots (optional):
 
 ```bash
-sudo sed -i 's/^#\?Storage=.*/Storage=persistent/' /etc/systemd/journald.conf
-sudo systemctl restart systemd-journald
+sed -i 's/^#\?Storage=.*/Storage=persistent/' /etc/systemd/journald.conf
+systemctl restart systemd-journald
 ```
 
 Create file/state paths (first time only):
 
 ```bash
-sudo touch /var/log/crypto-oversold.log
-sudo mkdir -p /var/lib/kraken_newlistings
+touch /var/log/crypto-oversold.log
+mkdir -p /var/lib/kraken_newlistings
 ```
 
 ## 5) Updates (preferred workflow)
 
 ```bash
-sudo systemctl stop kraken_oversold.service kraken_newlistings.service
+systemctl stop kraken_oversold.service kraken_newlistings.service
 cd /usr/local/bin/python-scripts
 # Pull with a PAT (read-only). Consider using a credential helper to avoid storing in shell history.
-sudo git pull --rebase --autostash
+git pull --rebase --autostash
 source /usr/local/bin/python-scripts/venv/bin/activate
 pip install -r requirements.txt
-sudo systemctl start kraken_oversold.service kraken_newlistings.service
+systemctl start kraken_oversold.service kraken_newlistings.service
 ```
 
 ## 6) Environment and secrets
@@ -131,7 +130,7 @@ sudo systemctl start kraken_oversold.service kraken_newlistings.service
 Use systemd Environment lines or drop-in files to override per host:
 
 ```bash
-sudo systemctl edit kraken_oversold.service
+systemctl edit kraken_oversold.service
 ```
 
 Add, for example:
@@ -148,8 +147,8 @@ Environment=EMAIL_RELAY_PORT=25
 Then:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl restart kraken_oversold.service
+systemctl daemon-reload
+systemctl restart kraken_oversold.service
 ```
 
 ## 7) Troubleshooting
