@@ -1,8 +1,12 @@
 import concurrent.futures
+import json
 import logging
 import smtplib
+import tempfile
+from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -21,6 +25,10 @@ EMAIL_RELAY_PORT = 25
 # Logging configuration
 LOG_FILE = "/var/log/crypto-oversold.log"
 LOG_ROTATE_INTERVAL_HOURS = 168  # 7 days
+
+# Dedupe configuration
+DEDUP_WINDOW_MINUTES = 30
+DEDUP_PRIMARY_PATH = Path("/var/tmp/crypto-oversold-cache.json")
 
 
 def setup_logger():
@@ -61,6 +69,73 @@ def setup_logger():
 
 
 logger = setup_logger()
+
+
+def resolve_dedupe_path():
+    candidates = [DEDUP_PRIMARY_PATH, Path(tempfile.gettempdir()) / DEDUP_PRIMARY_PATH.name]
+    for candidate in candidates:
+        try:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except OSError:
+            continue
+    return None
+
+
+class OversoldDedupe:
+    """Simple on-disk dedupe for oversold alerts."""
+
+    def __init__(self, storage_path: Path | None, window: timedelta):
+        self.storage_path: Path | None = storage_path
+        self.window: timedelta = window
+        self.state: dict[str, float] = {}
+        self._load()
+
+    def _load(self):
+        if self.storage_path is None:
+            return
+        try:
+            with self.storage_path.open("r", encoding="ascii") as fh:
+                data = json.load(fh)
+        except FileNotFoundError:
+            data = {}
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to read dedupe cache: %s", exc)
+            data = {}
+        now = datetime.now(UTC)
+        cutoff = now - self.window
+        cleaned = {}
+        for pair, raw_ts in data.items():
+            try:
+                ts = float(raw_ts)
+            except (TypeError, ValueError):
+                continue
+            ts_dt = datetime.fromtimestamp(ts, UTC)
+            if ts_dt >= cutoff:
+                cleaned[pair] = ts
+        self.state = cleaned
+
+    def should_emit(self, pair):
+        ts = self.state.get(pair)
+        if ts is None:
+            return True
+        ts_dt = datetime.fromtimestamp(ts, UTC)
+        cutoff = datetime.now(UTC) - self.window
+        return ts_dt <= cutoff
+
+    def mark(self, pair):
+        self.state[pair] = datetime.now(UTC).timestamp()
+
+    def persist(self):
+        if self.storage_path is None:
+            return
+        tmp_path = self.storage_path.with_suffix(".tmp")
+        try:
+            with tmp_path.open("w", encoding="ascii") as fh:
+                json.dump(self.state, fh, separators=(",", ":"))
+            tmp_path.replace(self.storage_path)
+        except OSError as exc:
+            logger.warning("Unable to persist dedupe cache: %s", exc)
 
 
 def get_asset_pairs():
@@ -246,6 +321,15 @@ def main():
     logger.info("Starting Kraken oversold pairs monitor run...")
     pairs = get_asset_pairs()
     logger.info("Fetched %d USD pairs for analysis.", len(pairs))
+    dedupe_path = resolve_dedupe_path()
+    deduper = OversoldDedupe(
+        dedupe_path,
+        timedelta(minutes=DEDUP_WINDOW_MINUTES),
+    )
+    if dedupe_path is None:
+        logger.warning(
+            "Dedupe persistence disabled; duplicates may reappear across runs."
+        )
     good_trades = []
     near_misses = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -255,7 +339,12 @@ def main():
         for future in concurrent.futures.as_completed(future_to_pair):
             result, fail_reasons = future.result()
             if result:
-                good_trades.append(result)
+                pair = result['pair']
+                if deduper.should_emit(pair):
+                    deduper.mark(pair)
+                    good_trades.append(result)
+                else:
+                    logger.info("%s skipped due to dedupe window", pair)
             elif fail_reasons:
                 near_misses.append((future_to_pair[future], fail_reasons))
     print('Profitable Reversion Trades:')
@@ -289,6 +378,7 @@ def main():
         for pair, reasons in near_misses:
             print(f"{pair}: Failed criteria -> {', '.join(reasons)}")
             logger.info("%s: Failed criteria -> %s", pair, ', '.join(reasons))
+    deduper.persist()
 
 
 if __name__ == "__main__":
